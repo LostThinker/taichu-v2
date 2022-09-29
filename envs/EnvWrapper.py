@@ -314,7 +314,7 @@ class GroupMaAtariEnv(GroupBaseEnv):
                         done_dict[camp_id][group_id][unit_id] = done[unit_name]
                         info_dict[camp_id][group_id][unit_id] = info[unit_name]
             camp_shared_info_dict[camp_id] = {}
-
+        return next_obs_dict, reward_dict, done_dict, info_dict, camp_shared_info_dict
         # for camp_id, camp_action in action_dict.items():
         #     reward_dict[camp_id] = {}
         #     done_dict[camp_id] = {}
@@ -412,7 +412,7 @@ class GroupMaAtariEnv(GroupBaseEnv):
         pass
 
 
-if __name__ == '__main__':
+def sc2test():
     env = GroupSC2Env(group_type="unit_space")
     obs, state = env.reset()
     while True:
@@ -432,3 +432,7 @@ if __name__ == '__main__':
     print(env.camp)
     print(env.camp_num)
     print(env.group_num)
+
+if __name__ == '__main__':
+    sc2test()
+
