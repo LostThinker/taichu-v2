@@ -3,23 +3,44 @@ import numpy as np
 import supersuit
 
 
+def bf_env_test():
+    from pettingzoo.butterfly import cooperative_pong_v5
+    env = cooperative_pong_v5.parallel_env()
+    obs = env.reset()
+    num_agent = env.num_agents
+    agents = env.agents
+    state = env.state()
+    stpes = env.step({'paddle_0': 1, 'paddle_1': 2})
+    print('a')
+
+
 def ma_atari_test():
     from pettingzoo.atari import basketball_pong_v3
-    env = basketball_pong_v3.parallel_env(num_players=2, obs_type='grayscale_image')
+    env = basketball_pong_v3.parallel_env(num_players=2, obs_type='grayscale_image',max_cycles=1000)
     env = supersuit.max_observation_v0(env, 2)
     env = supersuit.sticky_actions_v0(env, repeat_action_probability=0.25)
     env = supersuit.frame_skip_v0(env, 4)
     env = supersuit.resize_v1(env, 84, 84)
     env = supersuit.frame_stack_v1(env, 4)
-    returns=env.reset()
-    action_dict={}
-    for agent in env.agents:
-        print(agent)
-        obs_s=env.observation_space(agent)
-        action = env.action_space(agent).sample()
-        action_dict[agent]=action
-    returns=env.step(action_dict)
-    print(returns)
+    returns = env.reset()
+    step=0
+    while True:
+        step+=1
+        action_dict = {}
+        for agent in env.agents:
+            obs_s = env.observation_space(agent)
+            action = env.action_space(agent).sample()
+            action_dict[agent] = action
+        next_obs_dict, reward_dict, done_dict,truncate_dict, info_dict = env.step(action_dict)
+        print(done_dict)
+        print(truncate_dict)
+        if all(list(done_dict.values())):
+            print('done')
+            print(step)
+        if all(list(truncate_dict.values())):
+            print("truncate_dict")
+            print(step)
+
 
 
 def sc2env_test():
