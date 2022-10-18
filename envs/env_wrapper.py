@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from pettingzoo import atari
 import supersuit
 from envs.ma_atari_env import MaAtariEnv_register
-from envs.utils import gray_resize, rgb_to_gray
+from utils.utils import gray_resize, rgb_to_gray
 
 
 class GroupBaseEnv(ABC):
