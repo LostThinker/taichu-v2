@@ -3,7 +3,7 @@ attrs==22.1.0
 AutoROM==0.4.2
 bandit==1.7.4
 box2d-py==2.3.5
-certifi @ file:///opt/conda/conda-bld/certifi_1663615672595/work/certifi
+certifi
 cffi==1.15.1
 cfgv==3.3.1
 charset-normalizer==2.1.1
@@ -35,7 +35,7 @@ importlib-metadata==4.12.0
 importlib-resources==5.9.0
 iniconfig==1.1.1
 isort==5.10.1
-magent==0.2.4
+magent
 mccabe==0.6.1
 mock==4.0.3
 mpyq==0.2.5
@@ -58,8 +58,8 @@ py==1.11.0
 pycodestyle==2.7.0
 pycparser==2.21
 pyflakes==2.3.1
-pygame==2.1.0
-pymunk==6.2.0
+pygame
+pymunk==6.2.1
 pynput==1.7.6
 pyparsing==3.0.9
 PySC2==4.0.0
@@ -74,7 +74,7 @@ s2protocol==5.0.10.88500.0
 scipy==1.7.3
 six==1.16.0
 sk-video==1.1.10
-SMAC @ git+https://github.com/oxwhirl/smac.git@845b1173c8e38b37f4c67c5a03c6614916fb2f38
+SMAC @ git+https://github.com/oxwhirl/smac.git
 smmap==5.0.0
 stevedore==3.5.0
 SuperSuit==3.6.0
