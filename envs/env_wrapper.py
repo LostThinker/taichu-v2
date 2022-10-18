@@ -9,7 +9,12 @@ from envs.utils import gray_resize, rgb_to_gray
 
 
 class GroupBaseEnv(ABC):
-    def __init__(self, game_name, group_type='unit_type', auto_reset=True):
+    def __init__(
+            self,
+            game_name,
+            group_type='unit_type',
+            auto_reset=True
+    ):
         self.game_name = game_name
         self.group_type = group_type
         self.auto_reset = auto_reset
