@@ -12,9 +12,10 @@ class BaseBuffer(ABC):
     def put_batch(self, batch_data):
         self.buffer.extend(batch_data)
 
+    @abstractmethod
     def get(self, batch_size):
         """
-        从buffer中随机采样，需实现
+        从buffer中随机采样，需实现各种变种
         """
         data = []
         idx = np.random.choice(batch_size, size=batch_size, replace=False)
@@ -24,5 +25,8 @@ class BaseBuffer(ABC):
         return data
 
     def _batch_data_process(self, data):
-        # 将time_step维度整合到dict内，使数据变为（T,E,A,N），T为time_step，E为env_num，A为agent_num
+        """
+        将time_step维度整合到dict内，使数据变为（T,E,A,N），T为time_step，E为env_num，A为agent_num
+        """
+
         pass

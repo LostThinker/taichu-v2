@@ -1,11 +1,12 @@
 # -*- coding:utf-8 -*-
 import sys
+
 sys.path.append("..")
 import numpy as np
 from abc import ABC, abstractmethod
 from envs.env_wrapper import GroupMaAtariEnv
 from envs.vec_env_wrapper import VecEnvWrapper
-from utils.utils import make_env, make_policy, make_buffer,vec_env_data_process
+from utils.utils import make_env, make_policy, make_buffer, vec_env_data_process
 
 
 class BaseCollector(ABC):
@@ -23,11 +24,17 @@ class BaseCollector(ABC):
         self.buffer = make_buffer(buffer_args)
 
     @abstractmethod
-    def collect(self, state_dict, batch_size, collect_type='step'):
+    def collect(self, commander, batch_size, collect_type='step'):
         """
-        根据传来的模型参数与环境交互采样，可根据step数量或者episode数量采样，并将采集的样本放入buffer中
+        根据传来的模型与环境交互采样，可根据step数量或者episode数量采样，并将采集的样本放入buffer中
+
+        collect_type：'step' or 'episode'
 
         """
+        if collect_type == 'step':
+            pass
+        elif collect_type == 'episode':
+            pass
         pass
 
     def get_batch(self, batch_size):
