@@ -82,6 +82,7 @@ termcolor==2.0.1
 tinyscaler==1.2.4
 toml==0.10.2
 tomli==2.0.1
+torch==1.10.0
 tqdm==4.64.1
 typing_extensions==4.3.0
 urllib3==1.26.12

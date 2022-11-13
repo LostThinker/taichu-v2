@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import torch
 
 
 def make_env(env_arg):
@@ -21,6 +22,7 @@ def make_buffer(buffer_arg):
     根据参数返回buffer实例
     """
     pass
+
 
 def dict_state_to_tensor(dict_state, device='cpu'):
     if dict_state is None:
@@ -50,6 +52,7 @@ def dict_state_to_tensor(dict_state, device='cpu'):
                 state.append(hidden_state)
             state = torch.cat(state, dim=1).to(device)
             return state
+
 
 def batch_data_processor(batch, cat_1dim=True, device=torch.device("cpu")):
     """
@@ -94,6 +97,7 @@ def batch_data_processor(batch, cat_1dim=True, device=torch.device("cpu")):
         return elem
     raise TypeError('type not supported')
 
+
 def tensor_to_dict_state(data, rnn_type, batch_size, agent_num, device='cpu'):
     if rnn_type == 'lstm':
         h, c = data
@@ -110,6 +114,16 @@ def tensor_to_dict_state(data, rnn_type, batch_size, agent_num, device='cpu'):
                                   "lstm_c": c[:, env_id * agent_num:(env_id + 1) * agent_num, :][0]}
 
 
+def prev_state_split(data):
+    if data['rnn_type'] == 'lstm':
+        prev_state = []
+        for i in range(data['lstm_h'].shape[0]):
+            prev_state.append((data['lstm_h'][i].unsqueeze(0), data['lstm_c'][i].unsqueeze(0)))
+    else:
+        prev_state = []
+        for i in range(data['hidden_state'].shape[0]):
+            prev_state.append(data['hidden_state'][i].unsqueeze(0))
+    return prev_state
 
 
 def vec_env_data_process(data_dict):
@@ -151,9 +165,11 @@ def gray_resize(obs, shape):
     obs = cv2.resize(obs, shape)
     return obs
 
+
 class objDict(dict):
     __setattr__ = dict.__setitem__
     __getattr__ = dict.__getitem__
+
 
 def dictToObj(dictObj):
     if not isinstance(dictObj, dict):
@@ -162,6 +178,29 @@ def dictToObj(dictObj):
     for k, v in dictObj.items():
         d[k] = dictToObj(v)
     return d
+
+
+def get_optimizer(optim):
+    if isinstance(optim, str):
+        if optim == 'adam':
+            optim = torch.optim.Adam
+        elif optim == 'sgd':
+            optim = torch.optim.SGD
+        elif optim == 'rmsprop':
+            optim = torch.optim.RMSprop
+        else:
+            raise NotImplementedError
+    else:
+        pass
+    return optim
+
+
+def target_net_update(target_net, net, theta=0.001):
+    net_state_dict = net.state_dict()
+    for name, p in target_net.named_parameters():
+        p.data = (1 - theta) * p.data + theta * net_state_dict[name]
+    return target_net
+
 
 def get_env_config(env_config=None):
     """
