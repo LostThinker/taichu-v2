@@ -265,7 +265,19 @@ class Mixer(nn.module):
         # First layer
         w1 = torch.abs(self.hyper_w_1(states))
         b1 = self.hyper_b_1(states)
-        w1 = w1.view
+        w1 = w1.view(-1, self.agent_num, self.mixing_embed_shape)
+        b1 = b1.view(-1, 1, self.mixing_embed_shape)
+        hidden = F.elu(torch.bmm(agent_qs, w1) + b1)
+        # Second layer
+        w_final = torch.abs(self.hyper_w_final(states))
+        w_final = w_final.view(-1, self.mixing_embed_shape, 1)
+        # State-dependent bias
+        v = self.V(states).view(-1, 1, 1)
+        # Compute final output
+        y = torch.bmm(hidden, w_final) + v
+        # Reshape and return
+        q_tot = y.view(*bs)
+        return q_tot
 
 
 
