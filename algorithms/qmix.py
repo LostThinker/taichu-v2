@@ -1,6 +1,7 @@
 from utils.utils import dictToObj, get_env_config, make_policy, dict_state_to_tensor, batch_data_processor, \
     tensor_to_dict_state, prev_state_split, get_optimizer, target_net_update
 from .base_algo import BaseAlgo
+from typing import List, Dict, Any, Tuple, Union, Optional
 import torch
 import torch.nn.functional as F
 import copy
@@ -278,6 +279,35 @@ class Mixer(nn.module):
         # Reshape and return
         q_tot = y.view(*bs)
         return q_tot
+
+    class QMIXActor(nn.Module):
+        def __init__(
+                self,
+                obs_shape: Union[int, list],
+                action_shape: int,
+                agent_num: int,
+                hidden_size_list: Union[int, list],
+                hidden_channel_list: list = [16, 32, 32],
+                conv_output_shape: Union[int] = 128,
+                kernel_size_list: Union[int, list] = [8, 4, 3],
+                stride_list: Union[int, list] = [4, 2, 1],
+                activation: Optional[nn.Module] = nn.ReLU(),
+                rnn_type: Union[str] = 'gru',
+                rnn_hidden_size: Optional[int] = 128,
+                norm_type: Optional[str] = None,
+                noise: Optional[bool] = False,
+        ):
+            super(QMIXPolicy, self).__init__()
+            self.obs_shape = obs_shape
+            self.action_shape = action_shape
+            self.agent_num = agent_num
+            self.hidden_size_list = hidden_size_list
+
+            if isinstance(obs_shape, int):
+                self.actor_input_shape = obs_shape + agent_num + action_shape
+                self.model = DRQN
+
+
 
 
 
