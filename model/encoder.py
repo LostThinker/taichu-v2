@@ -3,16 +3,6 @@ import torch
 import torch.nn as nn
 from model.block import ResFCBlock, fc_block, ResBlock
 
-######################
-#########test#########
-
-def test():
-    FCEncoder_test()
-    ConvEncoder_test()
-
-def FCEncoder_test:
-    obs_shape = 10
-    hidden_size_list = [16, 32, 12]
 
 class FCEncoder(nn.Module):
     def __init__(self,
@@ -116,12 +106,3 @@ class ConvEncoder(nn.Module):
         x = self.conv_model(x)
         x = self.out_fc(x)
         return x
-
-
-if __name__ == '__main__':
-    test()
-
-
-
-
-
