@@ -1,7 +1,7 @@
 from typing import Union, Optional, Dict, Callable, List, Tuple
 from model.encoder import FCEncoder, ConvEncoder
 from model.head import DiscreteHead
-from utils.utils import
+from utils.utils import one_hot, parallel_wrapper
 import torch
 import torch.nn as nn
 
@@ -99,5 +99,103 @@ class DRQN(nn.Module):
         obs, hidden_state, last_action, agent_id = self._data_process(obs, hidden_state,
                                                                       last_action, agent_id)  # to T, B*A, N
         if self.rnn_type == 'normal' or self.rnn_type == 'gru':
+            assert isinstance(hidden_state, torch.Tensor)
+        elif self.rnn_type == 'lstm':
+            assert isinstance(hidden_state, Tuple)
 
+        x = self.get_rnn_inputs(obs, last_action, agent_id)
+        prev_state = hidden_state
+        rnn_out_list = []
+        hidden_state_list = []
 
+        if self.rnn_type == 'normal' or self.rnn_type == 'gru':
+            for t in range(x.shape[0]):
+                outputs, hidden_state = self.rnn(x[t:t + 1], hidden_state)
+                hidden_state_list.append(hidden_state)
+                rnn_out_list.append(outputs)
+
+            hidden_state_out = torch.cat(hidden_state_list, dim=-3)
+            next_state_out = hidden_state
+
+        elif self.rnn_type == 'lstm':
+            lstm_h_list = []
+            lstm_c_list = []
+            for t in range(x.shape[0]):
+                # if inference:
+                outputs, hidden_state = self.rnn(x[t:t + 1], hidden_state)
+                rnn_out_list.append(outputs)
+                lstm_h_list.append(hidden_state[0])
+                lstm_c_list.append(hidden_state[1])
+            lstm_h = torch.cat(lstm_h_list, dim=-3)
+            lstm_c = torch.cat(lstm_c_list, dim=-3)
+            hidden_state_out = {"lstm_h": lstm_h, "lstm_c": lstm_c}
+            next_state_out = hidden_state
+        x = torch.cat(rnn_out_list, 0)  # 在timestep维度上堆叠，形成(time_step, batch_size*n_agent, obs_dim)的原始形状
+        x = parallel_wrapper(self.head)(x)
+        x['prev_state'] = prev_state
+        x['next_state'] = next_state_out
+        x['hidden_state'] = hidden_state_out
+        x['rnn_type'] = self.rnn_type
+        return x
+
+    def get_rnn_inputs(self, obs, last_action, agent_id, inference=False):
+        if self.obs_type == 'vec':
+            inputs = obs
+            if last_action is not None:
+                inputs = torch.cat([inputs, last_action], -1)
+            if agent_id is not None:
+                if len(agent_id.shape) != len(obs.shape):
+                    assert self.agent_num is not None
+                    agent_id = one_hot(agent_id, self.agent_num)
+                inputs = torch.cat([inputs, agent_id], -1)
+        elif self.obs_type == 'img':
+            if inference:
+                obs_feature = self.feature_encoder(obs)
+            else:
+                obs_feature = parallel_wrapper(self.feature_encoder)(obs)
+            inputs = obs_feature
+            if last_action is not None:
+                inputs = torch.cat([inputs, last_action], -1)
+            if agent_id is not None:
+                if len(agent_id.shape) != len(obs.shape) - 2:
+                    assert self.agent_num is not None
+                    agent_id = one_hot(agent_id, self.agent_num)
+                inputs = torch.cat([inputs, agent_id], -1)
+        else:
+            raise ValueError("")
+        if inference:
+            inputs = self.encoder(inputs)
+        else:
+            inputs = parallel_wrapper(self.encoder)(inputs)
+            inputs = inputs.reshape(inputs.shape[0], -1, inputs.shape[-1])
+        return inputs
+
+    def _data_preprocess(self, obs, hidden_state, last_action, agent_id):
+        device = obs.device.type
+        if len(obs.shape) == 6:
+            obs = obs.reshape(obs.shape[0], -1, *obs.shape[3:])
+        if len(obs.shape) == 4:
+            obs = obs.reshape(obs.shape[0], -1, obs.shape[-1])
+
+        if hidden_state is None:
+            if self.rnn_type == 'lstm':
+                h = torch.zeros(1, obs.shape[1], self.rnn_hidden_size).to(device)
+                c = torch.zeros(1, obs.shape[1], self.rnn_hidden_size).to(device)
+                hidden_state = (h, c)
+            else:
+                hidden_state = torch.zeros(1, obs.shape[1], self.rnn_hidden_size).to(device)
+
+        elif isinstance(hidden_state, Tuple):
+            if len(hidden_state[0].shape) == 4:
+                hidden_state = (hidden_state[0].reshape(hidden_state[0].shape[0], -1, hidden_state[0].shape[-1]),
+                                hidden_state[1].reshape(hidden_state[1].shape[0], -1, hidden_state[1].shape[-1]))
+
+        elif isinstance(hidden_state, torch.Tensor):
+            if len(hidden_state.shape) == 4:
+                hidden_state = hidden_state.reshape(hidden_state.shape[0], -1, last_action.shape[-1])
+
+        if len(last_action.shape) == 4:
+            last_action = last_action.reshape(last_action.shape[0], -1, last_action.shape[-1])
+        if len(agent_id.shape) == 4:
+            agent_id = agent_id.reshape(agent_id.shape[0], -1, agent_id.shape[-1])
+        return obs, hidden_state, last_action, agent_id

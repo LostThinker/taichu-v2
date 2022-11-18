@@ -1,7 +1,8 @@
 from utils.utils import dictToObj, get_env_config, make_policy, dict_state_to_tensor, batch_data_processor, \
-    tensor_to_dict_state, prev_state_split, get_optimizer, target_net_update
+    tensor_to_dict_state, prev_state_split, get_optimizer, target_net_update, get_activation_fn
 from .base_algo import BaseAlgo
 from typing import List, Dict, Any, Tuple, Union, Optional
+from model.base import DRQN
 import torch
 import torch.nn.functional as F
 import copy
@@ -122,7 +123,8 @@ class QMIXPolicy():
     def __init__(self, policy_config, model):
         self.policy_config = policy_config
         self.model = model
-        self.optimizer = get_optimizer(policy_config.optimizer)(self.model.parameters(), lr=self.policy_config.learning_rate)
+        self.optimizer = get_optimizer(policy_config.optimizer)(self.model.parameters(),
+                                                                lr=self.policy_config.learning_rate)
         self.target_model = copy.deepcopy(self.model)
         self.hidden_state = None
         self.total_train_step = 0
@@ -280,34 +282,129 @@ class Mixer(nn.module):
         q_tot = y.view(*bs)
         return q_tot
 
-    class QMIXActor(nn.Module):
-        def __init__(
-                self,
-                obs_shape: Union[int, list],
-                action_shape: int,
-                agent_num: int,
-                hidden_size_list: Union[int, list],
-                hidden_channel_list: list = [16, 32, 32],
-                conv_output_shape: Union[int] = 128,
-                kernel_size_list: Union[int, list] = [8, 4, 3],
-                stride_list: Union[int, list] = [4, 2, 1],
-                activation: Optional[nn.Module] = nn.ReLU(),
-                rnn_type: Union[str] = 'gru',
-                rnn_hidden_size: Optional[int] = 128,
-                norm_type: Optional[str] = None,
-                noise: Optional[bool] = False,
-        ):
-            super(QMIXPolicy, self).__init__()
-            self.obs_shape = obs_shape
-            self.action_shape = action_shape
-            self.agent_num = agent_num
-            self.hidden_size_list = hidden_size_list
 
-            if isinstance(obs_shape, int):
-                self.actor_input_shape = obs_shape + agent_num + action_shape
-                self.model = DRQN
+class QMIXActor(nn.Module):
+    def __init__(
+            self,
+            obs_shape: Union[int, list],
+            action_shape: int,
+            agent_num: int,
+            hidden_size_list: Union[int, list],
+            hidden_channel_list: list = [16, 32, 32],
+            conv_output_shape: Union[int] = 128,
+            kernel_size_list: Union[int, list] = [8, 4, 3],
+            stride_list: Union[int, list] = [4, 2, 1],
+            activation: Optional[nn.Module] = nn.ReLU(),
+            rnn_type: Union[str] = 'gru',
+            rnn_hidden_size: Optional[int] = 128,
+            norm_type: Optional[str] = None,
+            noise: Optional[bool] = False,
+    ):
+        super(QMIXActor, self).__init__()
+        self.obs_shape = obs_shape
+        self.action_shape = action_shape
+        self.agent_num = agent_num
+        self.hidden_size_list = hidden_size_list
+
+        if isinstance(obs_shape, int):
+            self.actor_input_shape = obs_shape + agent_num + action_shape
+            self.model = DRQN(obs_shape, action_shape, hidden_size_list, hidden_channel_list,
+                              self.actor_input_shape, agent_num, activation=activation, rnn_type=rnn_type,
+                              rnn_hidden_size=rnn_hidden_size, norm_type=norm_type, noise=noise)
+        elif isinstance(obs_shape, list):
+            self.actor_input_shape = conv_output_shape + agent_num + action_shape
+            self.model = DRQN(obs_shape, action_shape, hidden_size_list, hidden_channel_list,
+                              self.actor_input_shape, agent_num, conv_output_shape, kernel_size_list, stride_list,
+                              activation, rnn_type, rnn_hidden_size=rnn_hidden_size, norm_type=norm_type,
+                              noise=noise)
+
+    def forward(
+            self,
+            obs,
+            hidden_state,
+            last_action,
+            agent_id,
+    ):
+        T, B, A = obs.shape[:3]
+        outputs = self.model(obs, hidden_state, last_action, agent_id)
+        logit, prev_state, next_state, rnn_type = outputs['logit'], outputs['prev_state'], outputs['next_state'], \
+                                                  outputs['rnn_type']
+        logit = logit.reshape(T, B, A, -1)
+        return {'logit': logit, 'prev_state': prev_state, 'next_state': next_state, 'rnn_type': rnn_type}
+
+
+class QMIX(nn.Module):
+    def __init__(
+            self,
+            agent_num: int,
+            obs_shape: Union[int, list],
+            action_shape: int,
+            state_shape: int,
+            actor_hidden_size_list: Union = [int, list],
+            hidden_channel_list: list = [16, 32, 32],
+            conv_output_shape: Union[int] = 128,
+            kernel_size_list: Union[int, list] = [8, 4, 3],
+            stride_list: Union[int, list] = [4, 2, 1],
+            activation: Union[nn.Module, str] = nn.ReLU(),
+            actor_rnn_type: Union[str] = 'gru',
+            actor_rnn_hidden_size: Optional[int] = 128,
+            mixing_embed_shape: int = 64,
+            hypernet_embed: int = 64,
+            norm_type: Optional[str] = None,
+            noise: Optional[bool] = False,
+    ):
+        super(QMIX, self).__init__()
+        self.agent_num = agent_num
+        self.obs_shape = obs_shape
+        self.action_shape = action_shape
+        activation = get_activation_fn(activation) if isinstance(activation, str) else activation
+        self.actor = QMIXActor(obs_shape, action_shape, agent_num, actor_hidden_size_list, hidden_channel_list,
+                               conv_output_shape, kernel_size_list, stride_list, activation, actor_rnn_type,
+                               actor_rnn_hidden_size, norm_type, noise)
+
+        self.mixer = Mixer(agent_num, state_shape, mixing_embed_shape, hypernet_embed)
+
+    def forward(self, inputs, mode):
+        if mode == 'actor_forward':
+            obs, agent_id, prev_state, last_action = self._prepare_actor_input_data(inputs)
+            return self.actor(obs, prev_state, last_action, agent_id)
+        elif mode == 'critic_forward':
+            obs, agent_id, prev_state, last_action, global_state, action, action_mask = self._prepare_critic_input_data(
+                inputs
+            )
+            q_logit = self.actor(obs, prev_state, last_action, agent_id)['logit']
+            if action is None:
+                # target forward
+                if len(action_mask.shape) == 3:
+                    action_mask = action_mask.unsqueeze(0)
+                else:
+                    action_mask = action_mask
+                q_logit[action_mask == 0.0] = -9999999
+                action = q_logit.argmax(dim=-1)
+
+            agent_q_act = torch.gather(q_logit, dim=-1, index=action.unsqueeze(-1))
+            agent_q_act = agent_q_act.squeeze(-1)
+            q_total = self.mixer(agent_q_act, global_state)
+            out = {'q_total': q_total}
+            return out
 
 
 
+    def _prepare_actor_input_data(self, inputs):
+        obs, last_action, agent_id = inputs['obs']['agent_obs'], inputs['obs']['last_action'], \
+                                     inputs['obs']['agent_id']
+        if inputs['prev_state'] is None:
+            prev_state = None
+        else:
+            prev_state = inputs['prev_state']
+        return obs, agent_id, prev_state, last_action
 
-
+    def _prepare_critic_input_data(self, inputs):
+        obs, agent_id, last_action, global_state, action_mask = inputs['obs']['agent_obs'], \
+                                                                inputs['obs']['agent_id'], \
+                                                                inputs['obs']['last_action'], \
+                                                                inputs['obs']['global_state'], \
+                                                                inputs['obs']['action_mask']
+        action = inputs.get('action', None)
+        prev_state = inputs['prev_state']
+        return obs, agent_id, prev_state, last_action, global_state, action, action_mask

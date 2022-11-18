@@ -1,6 +1,8 @@
 import numpy as np
 import cv2
 import torch
+import torch.nn as nn
+from typing import Union, Mapping, List, NamedTuple, Tuple, Callable, Optional, Any
 
 
 def make_env(env_arg):
@@ -90,12 +92,15 @@ def batch_data_processor(batch, cat_1dim=True, device=torch.device("cpu")):
         return ret
     elif isinstance(elem, list):
         transposed = zip(*batch)
-        return[batch_data_processor(samples, cat_1dim=cat_1dim, device=device) for samples in transposed]
+        return [batch_data_processor(samples, cat_1dim=cat_1dim, device=device) for samples in transposed]
     elif isinstance(elem, str):
         return elem
     elif elem is None:
         return elem
     raise TypeError('type not supported')
+
+
+def action_choose(logit, action_mask=None)
 
 
 def tensor_to_dict_state(data, rnn_type, batch_size, agent_num, device='cpu'):
@@ -150,6 +155,88 @@ def vec_env_data_process(data_dict):
     return data_dict
 
 
+def one_hot(val: torch.LongTensor, num: int, num_first: bool = False) -> torch.FloatTensor:
+    r"""
+    Overview:
+        Convert a ``torch.LongTensor`` to one hot encoding.
+        This implementation can be slightly faster than ``torch.nn.functional.one_hot``
+    Arguments:
+        - val (:obj:`torch.LongTensor`): each element contains the state to be encoded, the range should be [0, num-1]
+        - num (:obj:`int`): number of states of the one hot encoding
+        - num_first (:obj:`bool`): If ``num_first`` is False, the one hot encoding is added as the last; \
+            Otherwise as the first dimension.
+    Returns:
+        - one_hot (:obj:`torch.FloatTensor`)
+    Example:
+        # >>> one_hot(2*torch.ones([2,2]).long(),3)
+        # tensor([[[0., 0., 1.],
+        #          [0., 0., 1.]],
+        #         [[0., 0., 1.],
+        #          [0., 0., 1.]]])
+        # >>> one_hot(2*torch.ones([2,2]).long(),3,num_first=True)
+        # tensor([[[0., 0.], [1., 0.]],
+        #         [[0., 1.], [0., 0.]],
+        #         [[1., 0.], [0., 1.]]])
+    """
+    assert (isinstance(val, torch.Tensor)), type(val)
+    assert val.dtype == torch.long
+    assert (len(val.shape) >= 1)
+    old_shape = val.shape
+    val_reshape = val.reshape(-1, 1)
+    ret = torch.zeros(val_reshape.shape[0], num, device=val.device)
+    # To remember the location where the original value is -1 in val.
+    # If the value is -1, then it should be converted to all zeros encodings and
+    # the corresponding entry in index_neg_one is 1, which is used to transform
+    # the ret after the operation of ret.scatter_(1, val_reshape, 1) to their correct encodings bellowing
+    index_neg_one = torch.eq(val_reshape, -1).long()
+    if index_neg_one.sum != 0:  # 如果val中有-1
+        # 将-1变成0
+        val_reshape = torch.where(
+            val_reshape != -1, val_reshape,
+            torch.zeros(val_reshape.shape, device=val.device).long()
+        )
+    try:
+        ret.scatter_(1, val_reshape, 1)
+        if index_neg_one.sum() != 0:  # 如果val中有-1
+            ret = ret * (1 - index_neg_one)  # 把-1的编码从[1,0,...,0] to [0,0,...,0]
+    except RuntimeError:
+        raise RuntimeError('value: {}\nnum: {}\t:val_shape: {}\n'.format(val_reshape, num, val_reshape.shape))
+    if num_first:
+        return ret.permute(1, 0).reshape(num, *old_shape)
+    else:
+        return ret.reshape(*old_shape, num)
+
+
+def parallel_wrapper(forward_fn: Callable) -> Callable:
+    r"""
+    Overview:
+        Process timestep T and batch_size B at the same time, in other words, treat different timestep data as
+        different trajectories in a batch.
+    Arguments:
+        - forward_fn (:obj:`Callable`): Normal ``nn.Module`` 's forward function.
+    Returns:
+        - wrapper (:obj:`Callable`): Wrapped function.
+    """
+
+    def wrapper(x: torch.Tensor) -> Union[torch.Tensor, List[torch.Tensor]]:
+        T, B = x.shape[:2]
+
+        def reshape(d):
+            if isinstance(d, list):
+                d = [reshape(t) for t in d]
+            elif isinstance(d, dict):
+                d = {k: reshape(v) for k, v in d.items()}
+            else:
+                d = d.reshape(T, B, *d.shape[1:])
+            return d
+
+        x = x.reshape(T * B, *x.shape[2:])
+        x = forward_fn(x)
+        x = reshape(x)
+        return x
+    return wrapper
+
+
 def rgb_to_gray(obs):
     obs = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
     return obs
@@ -164,6 +251,12 @@ def gray_resize(obs, shape):
     obs = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
     obs = cv2.resize(obs, shape)
     return obs
+
+def get_activation_fn(activation):
+    if activation.lower() == 'relu':
+        return nn.ReLU()
+    elif activation.lower() == 'tanh':
+        return nn.Tanh()
 
 
 class objDict(dict):
