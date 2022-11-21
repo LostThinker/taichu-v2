@@ -1,7 +1,7 @@
 import sys
 
 sys.path.append("..")
-from smac.env.starcraft2.starcraft2 import StarCraft2Env
+from smac.smac.env.starcraft2.starcraft2 import StarCraft2Env
 from gym import spaces
 import numpy as np
 from abc import ABC, abstractmethod
@@ -9,7 +9,6 @@ from pettingzoo import atari
 import supersuit
 from envs.ma_atari_env import MaAtariEnv_register
 from utils.utils import gray_resize, rgb_to_gray
-
 
 
 class GroupBaseEnv(ABC):
@@ -535,7 +534,7 @@ def sc2_test():
 
 
 def maatari_test():
-    env = GroupMaAtariEnv(game_name='foozpong',group_type="unit_type", max_cycles=1000)
+    env = GroupMaAtariEnv(game_name='foozpong', group_type="unit_type", max_cycles=1000)
     obs_dict, camp_shared_info_dict = env.reset()
     step = 0
     while True:
@@ -547,7 +546,8 @@ def maatari_test():
                 action_dict[camp_id][group_id] = {}
                 for unit_id in units_id_list:
                     action_dict[camp_id][group_id][unit_id] = env.units_info['unit_action_space_list'][unit_id].sample()
-        next_obs_dict, reward_dict, done_dict, truncate_dict, info_dict, camp_shared_info_dict, game_over = env.step(action_dict)
+        next_obs_dict, reward_dict, done_dict, truncate_dict, info_dict, camp_shared_info_dict, game_over = env.step(
+            action_dict)
         # print(step)
         if game_over:
             print(step)

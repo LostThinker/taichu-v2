@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import cv2
 import torch
@@ -100,7 +102,128 @@ def batch_data_processor(batch, cat_1dim=True, device=torch.device("cpu")):
     raise TypeError('type not supported')
 
 
-def action_choose(logit, action_mask=None)
+def action_choose(logit, action_mask=None, epsilon=0.5, choose_type='epsilon'):
+    logit = logit.cpu()
+    if choose_type == 'epsilon':
+        prob = torch.softmax(logit, dim=-1)
+        prob = (1 - epsilon) * prob + epsilon * torch.ones_like(prob) / logit.shape[-1]
+        if action_mask is not None:
+            assert action_mask.shape == prob.shape
+            prob = torch.multiply(action_mask, prob)
+        else:
+            print("action_mask")
+        dist = torch.distributions.Categorical(probs=prob)
+        action = dist.sample()
+        return action
+    elif choose_type == 'greedy':
+        prob = torch.softmax(logit, dim=-1)
+        if action_mask is not None:
+            assert action_mask.shape == prob.shape
+            prob = torch.multiply((action_mask, prob))
+        else:
+            print("action_mask")
+        action = torch.argmax(prob, dim=-1)
+        return action
+
+
+def get_time_step(obs, action, next_obs, reward, done, prev_state, specific=None):
+    time_step = dict(
+        obs=obs,
+        action=action,
+        next_obs=next_obs,
+        reward=reward,
+        done=done,
+        prev_state=prev_state,
+        specific=specific
+    )
+    return time_step
+
+
+def get_obs(agent_obs, last_action, global_state, action_mask, agent_id):
+    obs = dict(
+        agent_obs=agent_obs,
+        last_action=last_action,
+        global_state=global_state,
+        action_mask=action_mask,
+        agent_id=agent_id
+    )
+    return obs
+
+
+def episode_unroller(data, unroll_len):
+    if unroll_len == 1:
+        return data
+    else:
+        split_data, residual = list_split(data, step=unroll_len)
+        if not split_data:
+            return []
+        if residual is not None:
+            miss_num = unroll_len - len(residual)
+            last_data = copy.deepcopy(split_data[-1][-miss_num:])
+            split_data.append(last_data + residual)
+        return split_data
+
+
+def list_split(data: list, step: int) -> List[list]:
+    r"""
+     Overview:
+         Split list of data by step.
+     Arguments:
+         - data(:obj:`list`): List of data for spliting
+         - step(:obj:`int`): Number of step for spliting
+     Returns:
+         - ret(:obj:`list`): List of splitted data.
+         - residual(:obj:`list`): Residule list. This value is ``None`` when  ``data`` divides ``steps``.
+     Example:
+         # >>> list_split([1,2,3,4],2)
+         ([[1, 2], [3, 4]], None)
+         # >>> list_split([1,2,3,4],3)
+         ([[1, 2, 3]], [4])
+     """
+    if len(data) < step:
+        return [], data
+    ret = []
+    divide_num = len(data) // step
+    for i in range(divide_num):
+        start, end = i * step, (i + 1) * step
+        ret.append(data[start:end])
+    if divide_num * step < len(data):
+        residual = data[divide_num * step:]
+    else:
+        residual = None
+    return ret, residual
+
+
+def null_padding(batch_data):
+    """
+    返回和data一样形式的全零数据
+    Args:
+        data:
+
+    Returns:返回和data一样形式的全零数据
+    """
+    max_len = 0
+    for data in batch_data:
+        max_len = max(len(data), max_len)
+
+    null_data = copy.deepcopy(batch_data[0][-1])
+    null_data['null'] = True
+    if isinstance(null_data['obs'], dict):
+        for key in null_data['obs'].keys():
+            null_data['obs'][key] = torch.zeros_like(null_data['obs'][key])
+            null_data['next_obs'][key] = torch.zeros_like(null_data['next_obs'][key])
+    null_data['action'] = torch.zeros_like(null_data['action'])
+    null_data['done'] = True
+    null_data['reward'] = 0. if isinstance(null_data['reward'], float) else torch.zeros_like(null_data['reward'])
+
+    for i in range(len(batch_data)):
+        data = batch_data[i]
+        lengths = len(data)
+        padding_data = [null_data] * (max_len - lengths)
+        batch_data[i].extend(padding_data)
+
+    return batch_data
+
 
 
 def tensor_to_dict_state(data, rnn_type, batch_size, agent_num, device='cpu'):
@@ -234,6 +357,7 @@ def parallel_wrapper(forward_fn: Callable) -> Callable:
         x = forward_fn(x)
         x = reshape(x)
         return x
+
     return wrapper
 
 
@@ -251,6 +375,7 @@ def gray_resize(obs, shape):
     obs = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
     obs = cv2.resize(obs, shape)
     return obs
+
 
 def get_activation_fn(activation):
     if activation.lower() == 'relu':
